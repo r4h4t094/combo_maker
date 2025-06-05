@@ -278,7 +278,7 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
         }
 
 # Handle domain input for targeted mode
-@app.on_message(filters.text & ~filters.command)
+@app.on_message(filters.text & filters.command)
 async def handle_domain_input(client: Client, message: Message):
     chat_id = message.chat.id
     waiting_key = f"waiting_domain_{chat_id}"
