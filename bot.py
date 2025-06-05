@@ -218,6 +218,7 @@ async def process_user_file(client: Client, user_id: int):
         file_path = await client.download_media(
             message=file_id,
             file_name=os.path.join(TEMP_DIR, f"temp_{user_id}.txt")
+        )
         
         await download_msg.edit_text("📊 Processing file...")
         
