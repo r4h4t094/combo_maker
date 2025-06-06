@@ -22,7 +22,7 @@ app = Client("combo_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Global variables to track processing
 processing_users = {}
-MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 MB in bytes
+MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 MB in bytes
 PROGRESS_UPDATE_INTERVAL = 5  # Update progress every 5%
 
 # Helper function to clean up files
