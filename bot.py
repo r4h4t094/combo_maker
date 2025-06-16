@@ -9,7 +9,6 @@ from pyrogram.types import (
 )
 from pyrogram.errors import RPCError, FloodWait, BadRequest
 from datetime import datetime
-from collections import defaultdict
 
 # Bot configuration
 API_ID = 23933044
@@ -23,7 +22,7 @@ app = Client("combo_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Global variables to track processing
 processing_users = {}
-MAX_FILE_SIZE = 4000 * 1024 * 1024  # 4000 MB in bytes
+MAX_FILE_SIZE = 4000 * 1024 * 1024  # 500 MB in bytes
 PROGRESS_UPDATE_INTERVAL = 5  # Update progress every 5%
 
 # Helper function to clean up files
@@ -38,8 +37,15 @@ async def cleanup_files(*files):
 async def process_log_file(user_id, file_path, target_domains=None):
     total_lines = 0
     processed_lines = 0
-    valid_combos = defaultdict(set)  # Dictionary to store combos per domain
+    valid_combos = {}  # Dictionary to store combos per domain
     last_update = 0
+    
+    # Initialize combo storage for each domain
+    if target_domains:
+        for domain in target_domains:
+            valid_combos[domain] = set()
+    else:
+        valid_combos['mixed'] = set()
     
     try:
         # Count total lines first
@@ -49,10 +55,6 @@ async def process_log_file(user_id, file_path, target_domains=None):
         
         if total_lines == 0:
             return {}
-        
-        # Convert single domain to list for consistent processing
-        if target_domains and isinstance(target_domains, str):
-            target_domains = [target_domains]
         
         # Process file
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -76,15 +78,15 @@ async def process_log_file(user_id, file_path, target_domains=None):
                     filled_length = int(progress_bar_length * processed_lines // total_lines)
                     progress_bar = '█' * filled_length + '░' * (progress_bar_length - filled_length)
                     
-                    # Calculate total combos found so far
-                    total_combos = sum(len(combos) for combos in valid_combos.values())
+                    # Calculate total found combos
+                    total_found = sum(len(combos) for combos in valid_combos.values())
                     
                     # Prepare progress message
                     progress_text = (
                         f"🔍 Processing... {current_progress:.1f}%\n"
                         f"[{progress_bar}]\n"
                         f"📊 Processed: {processed_lines}/{total_lines} lines\n"
-                        f"✅ Found: {total_combos} unique combos\n\n"
+                        f"✅ Found: {total_found} combos total\n\n"
                         "⏳ Click /cancel to stop processing."
                     )
                     
@@ -105,7 +107,7 @@ async def process_log_file(user_id, file_path, target_domains=None):
                 if user_id in processing_users and processing_users[user_id].get('cancelled', False):
                     return None
                 
-                # Extract email:pass combo from line
+                # Extract first email:pass combo from line (regardless of email domain)
                 email_pass_match = re.search(
                     r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}):([^\s]+)', 
                     line
@@ -115,17 +117,17 @@ async def process_log_file(user_id, file_path, target_domains=None):
                     password = email_pass_match.group(2)
                     email_domain = email.split('@')[-1].lower()
                     
-                    # For mixed mode, store all combos in a special key
-                    if not target_domains:
-                        valid_combos['all'].add(f"{email}:{password}")
-                    else:
-                        # For targeted mode, check if email domain matches any target domain
+                    if target_domains:
+                        # Check if this email matches any of our target domains
                         for domain in target_domains:
                             if domain.lower() in email_domain:
                                 valid_combos[domain].add(f"{email}:{password}")
                                 break
+                    else:
+                        # For mixed mode, add all valid combos
+                        valid_combos['mixed'].add(f"{email}:{password}")
         
-        # Convert sets to lists before returning
+        # Convert sets to lists
         return {domain: list(combos) for domain, combos in valid_combos.items()}
     
     except Exception as e:
@@ -140,12 +142,13 @@ async def start_command(client: Client, message: Message):
         "📌 **How to use:**\n"
         "1. Send or reply to a .txt file with the command `/combo`\n"
         "2. Choose between targeted or mixed combos\n"
-        "3. For targeted, enter the domain(s) (e.g., gmail.com or 'gmail.com yahoo.com')\n"
+        "3. For targeted, enter the domain (e.g., gmail.com) or multiple domains separated by space\n"
         "4. Wait for processing to complete\n\n"
-        "⚙️ **Features:**\n"
-        "- Multiple domain support (creates separate files for each domain)\n"
-        "- Real-time progress updates\n"
-        "- Automatic cleanup after processing\n\n"
+        "⚙️ **Commands:**\n"
+        "/start - Show this help message\n"
+        "/combo - Start processing a file\n"
+        "/cancel - Cancel current processing\n"
+        "/help - Show detailed help\n\n"
         f"👑 **Owner:** {OWNER_USERNAME}\n"
         "🔐 This bot securely processes your files and deletes them immediately after."
     )
@@ -162,17 +165,17 @@ async def help_command(client: Client, message: Message):
         "📖 **Combo Bot Help Guide**\n\n"
         "🔹 **What this bot does:**\n"
         "Extracts email:password combinations from text files, with options for:\n"
-        "- 🎯 Targeted extraction (specific domains - creates separate files for each domain)\n"
-        "- 🌀 Mixed extraction (all valid email:pass combos in one file)\n\n"
+        "- 🎯 Targeted extraction (specific domains like gmail.com)\n"
+        "- 🌀 Mixed extraction (all valid email:pass combos)\n\n"
         "🔹 **How to use:**\n"
         "1. Send a .txt file or reply to one with `/combo`\n"
         "2. Choose processing type (targeted/mixed)\n"
-        "3. For targeted, enter the domain(s) when asked (space-separated for multiple)\n"
+        "3. For targeted, enter one or multiple domains separated by space\n"
         "4. Wait for processing to complete\n\n"
-        "🔹 **Multiple Domain Processing:**\n"
-        "When entering multiple domains (e.g., 'gmail.com yahoo.com'):\n"
-        "- The bot will create separate files for each domain\n"
-        "- Only exact domain matches are included in each file\n\n"
+        "⚙️ **Technical Details:**\n"
+        "- Max file size: 200MB\n"
+        "- Files are deleted after processing\n"
+        "- Processing progress is shown in real-time\n\n"
         f"💡 **Need help? Contact owner:** {OWNER_USERNAME}"
     )
     
@@ -195,7 +198,6 @@ async def combo_command(client: Client, message: Message):
             "Need help? Use /help for more instructions."
         )
         return
-
 
     try:
         # Check if the replied message has a document
@@ -226,15 +228,15 @@ async def combo_command(client: Client, message: Message):
         
         # Ask for processing type
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎯 Targeted (Specific Domain(s))", callback_data="targeted")],
+            [InlineKeyboardButton("🎯 Targeted (Specific Domain)", callback_data="targeted")],
             [InlineKeyboardButton("🌀 Mixed (All Domains)", callback_data="mixed")],
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
         ])
         
         await message.reply_text(
             "📝 **Please choose the type of combo you want to generate:**\n\n"
-            "🎯 **Targeted** - Extract combos for specific domain(s) (creates separate files for each domain)\n"
-            "🌀 **Mixed** - Extract all valid email:password combinations (single file)\n\n"
+            "🎯 **Targeted** - Extract combos for specific domain(s) (e.g., gmail.com or multiple domains separated by space)\n"
+            "🌀 **Mixed** - Extract all valid email:password combinations\n\n"
             f"👑 Bot Owner: {OWNER_USERNAME}",
             reply_markup=keyboard
         )
@@ -281,10 +283,10 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
             
             if data == "targeted":
                 await callback_query.message.edit_text(
-                    "🔎 **Please send the target domain(s)** (e.g., 'gmail.com' or 'gmail.com yahoo.com netflix.com')\n\n"
-                    "ℹ️ Separate multiple domains with spaces\n"
-                    "ℹ️ The bot will create separate files for each domain\n"
-                    "ℹ️ Just send the domain names without @ or http://\n"
+                    "🔎 **Please send the target domain(s)** (e.g., gmail.com or multiple domains separated by space)\n\n"
+                    "ℹ️ Examples:\n"
+                    "- For single domain: `gmail.com`\n"
+                    "- For multiple domains: `gmail.com yahoo.com netflix.com`\n\n"
                     "🛑 Send /cancel to abort"
                 )
                 await callback_query.answer()
@@ -328,22 +330,24 @@ async def handle_target_domain(client: Client, message: Message):
             return
         
         if processing_users[user_id]['type'] == "targeted":
+            # Split input into multiple domains
             input_text = message.text.strip().lower()
-            target_domains = input_text.split()
+            potential_domains = input_text.split()
+            target_domains = []
             
             # Validate each domain
-            valid_domains = []
-            for domain in target_domains:
+            for domain in potential_domains:
                 if re.match(r'^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', domain):
-                    valid_domains.append(domain)
+                    target_domains.append(domain)
                 else:
-                    await message.reply_text(f"⚠️ Skipping invalid domain format: {domain}")
+                    await message.reply_text(f"❌ Invalid domain format: {domain}. Please send valid domains (e.g., gmail.com or multiple domains separated by space)")
+                    return
             
-            if not valid_domains:
+            if not target_domains:
                 await message.reply_text("❌ No valid domains provided. Please try again.")
                 return
             
-            processing_users[user_id]['target_domains'] = valid_domains
+            processing_users[user_id]['target_domains'] = target_domains
             msg = await message.reply_text("📥 Downloading your file... Please wait.")
             
             # Download the file
@@ -357,7 +361,7 @@ async def handle_target_domain(client: Client, message: Message):
                 processing_users[user_id]['progress_msg'] = msg.id
                 
                 # Start processing
-                await process_and_send_combos(user_id, valid_domains)
+                await process_and_send_combos(user_id, target_domains)
                 
             except Exception as e:
                 await message.reply_text(f"❌ Error: {str(e)}")
@@ -388,33 +392,34 @@ async def process_and_send_combos(user_id, target_domains=None):
                 del processing_users[user_id]
             return
         
-        if not combos_dict:
+        if not combos_dict or all(not combos for combos in combos_dict.values()):
             await app.send_message(
                 user_id,
                 "❌ No valid email:pass combos found." + 
-                (f"\nNo combos found for domain(s): {', '.join(target_domains)}" if target_domains else "")
+                (f"\nNo combos found for domains: {', '.join(target_domains)}" if target_domains else "")
             )
             await cleanup_files(file_path)
             if user_id in processing_users:
                 del processing_users[user_id]
             return
         
-        # For mixed mode (single file)
-        if 'all' in combos_dict:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Save and send combos for each domain
+        processing_time = time.time() - start_time
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # For mixed mode
+        if not target_domains and 'mixed' in combos_dict:
             output_filename = f"mixed_combos_{timestamp}.txt"
-            
             with open(output_filename, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(combos_dict['all']))
+                f.write('\n'.join(combos_dict['mixed']))
             
-            processing_time = time.time() - start_time
             await app.send_document(
                 chat_id=user_id,
                 document=output_filename,
                 caption=(
                     f"✅ **Successfully processed!**\n\n"
                     f"🔹 **Type:** Mixed\n"
-                    f"🔹 **Combos found:** {len(combos_dict['all'])}\n"
+                    f"🔹 **Combos found:** {len(combos_dict['mixed'])}\n"
                     f"🔹 **Processing time:** {processing_time:.2f} seconds\n\n"
                     f"👑 **Bot Owner:** {OWNER_USERNAME}\n"
                     "⚠️ This file will be deleted from our server shortly."
@@ -422,56 +427,47 @@ async def process_and_send_combos(user_id, target_domains=None):
             )
             await cleanup_files(output_filename)
         
-        # For targeted mode (multiple files)
+        # For targeted mode
         else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            processing_time = time.time() - start_time
-            total_combos = sum(len(combos) for combos in combos_dict.values())
+            total_combos = 0
+            sent_files = 0
             
-            # Send summary message first
-            summary_msg = await app.send_message(
-                user_id,
-                f"✅ **Processing Complete!**\n\n"
-                f"🔹 **Domains processed:** {len(combos_dict)}\n"
-                f"🔹 **Total combos found:** {total_combos}\n"
-                f"🔹 **Processing time:** {processing_time:.2f} seconds\n\n"
-                "📁 Now sending separate files for each domain..."
-            )
-            
-            # Send separate files for each domain
             for domain, combos in combos_dict.items():
                 if not combos:
                     continue
                 
+                total_combos += len(combos)
                 domain_clean = domain.replace('.', '_')
                 output_filename = f"{domain_clean}_{timestamp}.txt"
                 
                 with open(output_filename, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(combos))
                 
-                try:
-                    await app.send_document(
-                        chat_id=user_id,
-                        document=output_filename,
-                        caption=f"🔹 **Domain:** {domain}\n🔹 **Combos:** {len(combos)}"
+                await app.send_document(
+                    chat_id=user_id,
+                    document=output_filename,
+                    caption=(
+                        f"✅ **Domain:** {domain}\n"
+                        f"🔹 **Combos found:** {len(combos)}\n\n"
+                        f"👑 **Bot Owner:** {OWNER_USERNAME}\n"
+                        "⚠️ This file will be deleted from our server shortly."
                     )
-                    await cleanup_files(output_filename)
-                except Exception as e:
-                    print(f"Error sending file for domain {domain}: {e}")
+                )
+                sent_files += 1
+                await cleanup_files(output_filename)
+                await asyncio.sleep(1)  # Small delay between files
             
-            # Edit summary message to show completion
-            await app.edit_message_text(
-                chat_id=user_id,
-                message_id=summary_msg.id,
-                text=(
-                    f"✅ **All files sent successfully!**\n\n"
-                    f"🔹 **Domains processed:** {len(combos_dict)}\n"
+            # Send summary if multiple files were sent
+            if sent_files > 1:
+                await app.send_message(
+                    user_id,
+                    f"📦 **Processing Complete!**\n\n"
+                    f"🔹 **Domains processed:** {len(target_domains)}\n"
+                    f"🔹 **Files sent:** {sent_files}\n"
                     f"🔹 **Total combos found:** {total_combos}\n"
                     f"🔹 **Processing time:** {processing_time:.2f} seconds\n\n"
-                    f"👑 **Bot Owner:** {OWNER_USERNAME}\n"
-                    "⚠️ All temporary files have been deleted from our server."
+                    f"👑 **Bot Owner:** {OWNER_USERNAME}"
                 )
-            )
         
         # Cleanup
         await cleanup_files(file_path)
@@ -490,7 +486,6 @@ async def process_and_send_combos(user_id, target_domains=None):
 @app.on_error()
 async def error_handler(client: Client, error: Exception):
     print(f"Error occurred: {error}")
-    # You can add specific error handling here
 
 # Start the bot
 if __name__ == "__main__":
