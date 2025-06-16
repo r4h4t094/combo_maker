@@ -107,6 +107,17 @@ async def process_log_file(user_id, file_path, target_domains=None):
                 if user_id in processing_users and processing_users[user_id].get('cancelled', False):
                     return None
                 
+                # For targeted mode: check if any target domain exists ANYWHERE in the line
+                if target_domains:
+                    domain_found = None
+                    for domain in target_domains:
+                        if domain.lower() in line_lower:
+                            domain_found = domain
+                            break
+                    
+                    if not domain_found:
+                        continue
+                
                 # Extract first email:pass combo from line (regardless of email domain)
                 email_pass_match = re.search(
                     r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}):([^\s]+)', 
@@ -115,14 +126,10 @@ async def process_log_file(user_id, file_path, target_domains=None):
                 if email_pass_match:
                     email = email_pass_match.group(1)
                     password = email_pass_match.group(2)
-                    email_domain = email.split('@')[-1].lower()
                     
                     if target_domains:
-                        # Check if this email matches any of our target domains
-                        for domain in target_domains:
-                            if domain.lower() in email_domain:
-                                valid_combos[domain].add(f"{email}:{password}")
-                                break
+                        # Add to the domain's combos
+                        valid_combos[domain_found].add(f"{email}:{password}")
                     else:
                         # For mixed mode, add all valid combos
                         valid_combos['mixed'].add(f"{email}:{password}")
@@ -133,7 +140,6 @@ async def process_log_file(user_id, file_path, target_domains=None):
     except Exception as e:
         print(f"Error processing file: {e}")
         return {}
-
 # Start command handler
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
