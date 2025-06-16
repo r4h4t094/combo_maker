@@ -414,7 +414,7 @@ async def process_and_send_combos(user_id, target_domains=None):
                 caption=(
                     f"✅ **Successfully processed!**\n\n"
                     f"🔹 **Type:** Mixed\n"
-                    f"🔹 **Combos found:** {len(combos_dict['all']}\n"
+                    f"🔹 **Combos found:** {len(combos_dict['all'])}\n"
                     f"🔹 **Processing time:** {processing_time:.2f} seconds\n\n"
                     f"👑 **Bot Owner:** {OWNER_USERNAME}\n"
                     "⚠️ This file will be deleted from our server shortly."
