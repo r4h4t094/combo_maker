@@ -319,7 +319,7 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
             pass
 
 # Handler for target domain
-@app.on_message(filters.text & filters.private & filters.command(["start", "help", "cancel", "combo"]))
+@app.on_message(filters.text & filters.private & ~filters.command(["start", "help", "cancel", "combo"]))
 async def handle_target_domain(client: Client, message: Message):
     user_id = message.from_user.id
     
