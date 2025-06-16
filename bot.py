@@ -81,14 +81,29 @@ async def process_log_file(user_id, file_path, target_domains=None):
                     # Calculate total found combos
                     total_found = sum(len(combos) for combos in valid_combos.values())
                     
+                    # Prepare domain counts text
+                    domain_counts = []
+                    if target_domains:
+                        for domain in target_domains:
+                            count = len(valid_combos.get(domain, set()))
+                            if count > 0:
+                                domain_counts.append(f"{domain} → {count}")
+                    
                     # Prepare progress message
                     progress_text = (
                         f"🔍 Processing... {current_progress:.1f}%\n"
                         f"[{progress_bar}]\n"
                         f"📊 Processed: {processed_lines}/{total_lines} lines\n"
-                        f"✅ Found: {total_found} combos total\n\n"
-                        "⏳ Click /cancel to stop processing."
+                        f"✅ Found: {total_found} combos total\n"
                     )
+                    
+                    # Add domain counts if available
+                    if domain_counts:
+                        progress_text += "\n".join(domain_counts) + "\n\n"
+                    else:
+                        progress_text += "\n"
+                    
+                    progress_text += "⏳ Click /cancel to stop processing."
                     
                     # Try to update progress message with flood control
                     if user_id in processing_users:
