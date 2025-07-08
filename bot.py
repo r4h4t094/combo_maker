@@ -466,6 +466,7 @@ async def process_and_send_combos(user_id, target_domains=None):
                 
                 total_combos += len(combos)
                 domain_clean = domain.replace('.', '_')
+                domain_clean = domain.replace('/', '_')
                 output_filename = f"{domain_clean}_{timestamp}.txt"
                 
                 with open(output_filename, 'w', encoding='utf-8') as f:
