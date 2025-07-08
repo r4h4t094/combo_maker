@@ -357,8 +357,15 @@ async def handle_target_domain(client: Client, message: Message):
             target_domains = []
             
             # Validate each domain
-            for domain in potential_domains:
+            '''for domain in potential_domains:
                 if re.match(r'^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', domain):
+                    target_domains.append(domain)
+                else:
+                    await message.reply_text(f"❌ Invalid domain format: {domain}. Please send valid domains (e.g., gmail.com or multiple domains separated by space)")
+                    return'''
+
+            for domain in potential_domains:
+                if re.match(r'^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/[a-zA-Z0-9-]*)?$', domain):
                     target_domains.append(domain)
                 else:
                     await message.reply_text(f"❌ Invalid domain format: {domain}. Please send valid domains (e.g., gmail.com or multiple domains separated by space)")
