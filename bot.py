@@ -169,6 +169,10 @@ async def process_log_file(user_id, file_path, target_domains=None, extraction_t
                         username = match.group(1)
                         password = match.group(2)
                         
+                        # For username:password, ensure it's not an email
+                        if extraction_type == "username_pass" and '@' in username:
+                            continue
+                        
                         # Add to the appropriate collection
                         if target_domains:
                             valid_combos[domain_found].add(f"{username}:{password}")
@@ -240,6 +244,14 @@ async def help_command(client: Client, message: Message):
 @app.on_message(filters.command("combo") & filters.private)
 async def combo_command(client: Client, message: Message):
     user_id = message.from_user.id
+    
+    # Clear any previous session data for this user
+    if user_id in processing_users:
+        file_path = processing_users[user_id].get('file_path')
+        if file_path and os.path.exists(file_path):
+            await cleanup_files(file_path)
+        del processing_users[user_id]
+    
     # Check if the command is used without replying to a message
     if not message.reply_to_message:
         await message.reply_text(
@@ -369,6 +381,9 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
             await callback_query.message.edit_text("🛑 Processing cancelled.")
             await callback_query.answer("Cancelled")
             if user_id in processing_users:
+                file_path = processing_users[user_id].get('file_path')
+                if file_path and os.path.exists(file_path):
+                    await cleanup_files(file_path)
                 del processing_users[user_id]
             return
         
@@ -440,6 +455,9 @@ async def callback_query_handler(client: Client, callback_query: CallbackQuery):
                 except Exception as e:
                     await callback_query.message.edit_text(f"❌ Error: {str(e)}")
                     if user_id in processing_users:
+                        file_path = processing_users[user_id].get('file_path')
+                        if file_path and os.path.exists(file_path):
+                            await cleanup_files(file_path)
                         del processing_users[user_id]
     
     except Exception as e:
@@ -486,11 +504,17 @@ async def handle_target_domain(client: Client, message: Message):
             except Exception as e:
                 await message.reply_text(f"❌ Error: {str(e)}")
                 if user_id in processing_users:
+                    file_path = processing_users[user_id].get('file_path')
+                    if file_path and os.path.exists(file_path):
+                        await cleanup_files(file_path)
                     del processing_users[user_id]
     
     except Exception as e:
         await message.reply_text(f"❌ An error occurred: {str(e)}")
         if user_id in processing_users:
+            file_path = processing_users[user_id].get('file_path')
+            if file_path and os.path.exists(file_path):
+                await cleanup_files(file_path)
             del processing_users[user_id]
 
 # Function to process and send combos
