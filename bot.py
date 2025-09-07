@@ -13,7 +13,7 @@ from datetime import datetime
 # Bot configuration
 API_ID = 23933044
 API_HASH = "6df11147cbec7d62a323f0f498c8c03a"
-BOT_TOKEN = "7989255010:AAH4Ap0mV3f1btlXLBIrMhwErpSbYlcH81E"
+BOT_TOKEN = "7989255010:AAGI73-gpORxqqnsNrRRCLWNCyyACA0ia-w"
 OWNER_ID = 7125341830  # Replace with your Telegram ID
 OWNER_USERNAME = "@still_alivenow"  # Your Telegram username
 
