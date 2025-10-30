@@ -2,6 +2,7 @@ import os
 import re
 import time
 import asyncio
+import sys
 from pyrogram import Client, filters
 from pyrogram.types import (
     Message, InlineKeyboardMarkup,
@@ -10,11 +11,9 @@ from pyrogram.types import (
 from pyrogram.errors import RPCError, FloodWait, BadRequest
 from datetime import datetime, timedelta
 from collections import deque
-import asyncio
 import pymongo
 from pymongo import MongoClient
 import psutil
-import requests
 import logging
 
 # Configure logging
@@ -1783,20 +1782,41 @@ async def check_premium_expiry():
             print(f"Premium expiry checker error: {e}")
             await asyncio.sleep(300)
 
+# ===========================
+# BOT STARTUP
+# ===========================
+
+@app.on_message(filters.command("ping") & filters.private)
+async def ping_command(client: Client, message: Message):
+    start_time = time.time()
+    msg = await message.reply_text("🏓 **Pong!**")
+    end_time = time.time()
+    await msg.edit_text(f"🏓 **Pong!**\n⏱️ Response time: {(end_time - start_time) * 1000:.2f} ms")
+
 # Error handler
 @app.on_error()
 async def error_handler(client: Client, error: Exception):
     print(f"Bot error: {error}")
 
 # Start the bot
-if __name__ == "__main__":
+async def main():
+    await app.start()
     print("🤖 Advanced Combo Bot Started...")
     print("✅ Bot is responsive and ready!")
     
-    # Start premium expiry checker
+    # Start background tasks
+    asyncio.create_task(start_queue_processor())
     asyncio.create_task(check_premium_expiry())
     
+    # Keep the bot running
+    await asyncio.Event().wait()
+
+if __name__ == "__main__":
     try:
-        app.run()
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Bot stopped by user")
     except Exception as e:
         print(f"❌ Fatal error: {e}")
+    finally:
+        print("Bot stopped")
