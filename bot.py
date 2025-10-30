@@ -73,6 +73,7 @@ PAYMENT_METHODS = {
 processing_users = {}
 processing_queue = deque()
 queue_processor_running = False
+background_tasks = []
 
 # Initialize database
 async def initialize_database():
@@ -357,6 +358,59 @@ async def process_log_file(user_id, file_path, target_domains=None, target_keywo
     except Exception as e:
         print(f"Error processing file for user {user_id}: {e}")
         return {}
+
+# Background tasks
+async def reset_daily_limits():
+    while True:
+        now = datetime.now()
+        next_reset = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        wait_seconds = (next_reset - now).total_seconds()
+        
+        await asyncio.sleep(wait_seconds)
+        
+        users_collection.update_many({}, {"$set": {"daily_checks_used": 0}})
+        print("Daily limits reset at midnight")
+
+async def check_premium_expiry():
+    while True:
+        await asyncio.sleep(3600)  # Check every hour
+        
+        expired_users = users_collection.find({
+            "user_type": "premium",
+            "premium_expiry": {"$lt": datetime.now()}
+        })
+        
+        for user in expired_users:
+            await update_user(user["user_id"], {
+                "user_type": "free",
+                "premium_expiry": None
+            })
+            
+            try:
+                await app.send_message(
+                    user["user_id"],
+                    "ℹ️ **Your Premium Plan Has Expired**\n\n"
+                    "Your premium subscription has ended. You can still use free features.\n"
+                    "Use /plans to upgrade again!"
+                )
+            except:
+                pass
+
+# Start background tasks when bot starts
+@app.on_message(filters.command("startbg") & filters.private)
+async def start_background_tasks(client: Client, message: Message):
+    if not await is_admin(message.from_user.id):
+        return
+    
+    global background_tasks
+    
+    # Start background tasks
+    task1 = asyncio.create_task(reset_daily_limits())
+    task2 = asyncio.create_task(check_premium_expiry())
+    
+    background_tasks.extend([task1, task2])
+    
+    await message.reply_text("✅ Background tasks started!")
 
 # Command handlers
 @app.on_message(filters.command("start") & filters.private)
@@ -654,14 +708,20 @@ async def myplan_command(client: Client, message: Message):
     
     # Show limits
     if user["user_type"] == "premium":
-        limits = settings["premium"]
+        file_size = settings["premium_file_size"]
+        time_break = settings["premium_time_break"]
+        daily_checks = settings["premium_daily_checks"]
+        multi_domain = settings["premium_multi_domain"]
     else:
-        limits = settings["free"]
+        file_size = settings["free_file_size"]
+        time_break = settings["free_time_break"]
+        daily_checks = settings["free_daily_checks"]
+        multi_domain = settings["free_multi_domain"]
     
-    plan_text += f"📁 **File Size:** {limits['file_size']}MB\n"
-    plan_text += f"⏰ **Cooldown:** {limits['time_break']} minutes\n"
-    plan_text += f"📊 **Daily Files:** {user['daily_checks_used']}/{limits['daily_checks']}\n"
-    plan_text += f"🔢 **Multi-domain:** {'Yes' if limits['multi_domain'] else 'No'}\n"
+    plan_text += f"📁 **File Size:** {file_size}MB\n"
+    plan_text += f"⏰ **Cooldown:** {time_break} minutes\n"
+    plan_text += f"📊 **Daily Files:** {user['daily_checks_used']}/{daily_checks}\n"
+    plan_text += f"🔢 **Multi-domain:** {'Yes' if multi_domain else 'No'}\n"
     plan_text += f"🔄 **Combo Types:** All\n\n"
     
     if user["user_type"] == "free":
@@ -974,6 +1034,7 @@ async def broadcast_command(client: Client, message: Message):
     
     broadcast_msg = message.reply_to_message
     users = users_collection.find({})
+    total_users = users_collection.count_documents({})
     
     success = 0
     failed = 0
@@ -1596,43 +1657,21 @@ async def process_all_formats(user_id, file_path, target_domains, target_keyword
         f"👑 {OWNER_USERNAME}"
     )
 
-# Background task to reset daily limits
-async def reset_daily_limits():
-    while True:
-        now = datetime.now()
-        next_reset = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-        wait_seconds = (next_reset - now).total_seconds()
-        
-        await asyncio.sleep(wait_seconds)
-        
-        users_collection.update_many({}, {"$set": {"daily_checks_used": 0}})
-        print("Daily limits reset at midnight")
-
-# Background task to check premium expiry
-async def check_premium_expiry():
-    while True:
-        await asyncio.sleep(3600)
-        
-        expired_users = users_collection.find({
-            "user_type": "premium",
-            "premium_expiry": {"$lt": datetime.now()}
-        })
-        
-        for user in expired_users:
-            await update_user(user["user_id"], {
-                "user_type": "free",
-                "premium_expiry": None
-            })
-            
-            try:
-                await app.send_message(
-                    user["user_id"],
-                    "ℹ️ **Your Premium Plan Has Expired**\n\n"
-                    "Your premium subscription has ended. You can still use free features.\n"
-                    "Use /plans to upgrade again!"
-                )
-            except:
-                pass
+# Start background tasks when bot starts
+@app.on_start()
+async def on_start(client: Client):
+    print("🤖 Advanced Combo Bot Starting...")
+    
+    # Initialize database
+    await initialize_database()
+    
+    # Start background tasks
+    global background_tasks
+    task1 = asyncio.create_task(reset_daily_limits())
+    task2 = asyncio.create_task(check_premium_expiry())
+    background_tasks.extend([task1, task2])
+    
+    print("✅ Bot is responsive and ready!")
 
 # Error handler
 @app.on_error()
@@ -1641,16 +1680,6 @@ async def error_handler(client: Client, error: Exception):
 
 # Start the bot
 if __name__ == "__main__":
-    print("🤖 Advanced Combo Bot Starting...")
-    
-    # Initialize database
-    asyncio.run(initialize_database())
-    
-    # Start background tasks
-    asyncio.create_task(reset_daily_limits())
-    asyncio.create_task(check_premium_expiry())
-    
-    print("✅ Bot is responsive and ready!")
     try:
         app.run()
     except Exception as e:
