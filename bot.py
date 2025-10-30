@@ -1658,8 +1658,7 @@ async def process_all_formats(user_id, file_path, target_domains, target_keyword
     )
 
 # Start background tasks when bot starts
-@app.on_start()
-async def on_start(client: Client):
+async def start_background_tasks_on_startup():
     print("🤖 Advanced Combo Bot Starting...")
     
     # Initialize database
@@ -1680,6 +1679,16 @@ async def error_handler(client: Client, error: Exception):
 
 # Start the bot
 if __name__ == "__main__":
+    print("🤖 Starting Advanced Combo Bot...")
+    
+    # Initialize database synchronously first
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(initialize_database())
+    
+    # Start background tasks
+    loop.create_task(start_background_tasks_on_startup())
+    
     try:
         app.run()
     except Exception as e:
