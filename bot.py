@@ -1611,7 +1611,7 @@ async def reset_daily_limits():
 # Background task to check premium expiry
 async def check_premium_expiry():
     while True:
-        await asyncio.sleep(3600)  Check every hour
+        await asyncio.sleep(3600)
         
         expired_users = users_collection.find({
             "user_type": "premium",
