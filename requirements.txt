@@ -3,3 +3,5 @@ tgcrypto
 flask
 gunicorn 
 tqdm
+pymongo
+psutil
