@@ -1,24 +1,17 @@
+
 import os
 import re
 import time
 import asyncio
-import sys
 from pyrogram import Client, filters
 from pyrogram.types import (
     Message, InlineKeyboardMarkup,
     InlineKeyboardButton, CallbackQuery
 )
 from pyrogram.errors import RPCError, FloodWait, BadRequest
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import deque
-import pymongo
-from pymongo import MongoClient
-import psutil
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import asyncio
 
 # Bot configuration
 API_ID = 23933044
@@ -26,70 +19,9 @@ API_HASH = "6df11147cbec7d62a323f0f498c8c03a"
 BOT_TOKEN = "7989255010:AAGI73-gpORxqqnsNrRRCLWNCyyACA0ia-w"
 OWNER_ID = 7125341830
 OWNER_USERNAME = "@still_alivenow"
-LOG_CHANNEL = -1003277595247
-DB_URL = "mongodb+srv://animepahe:animepahe@animepahe.o8zgy.mongodb.net/?retryWrites=true&w=majority&appName=animepahe"
-
-# Initialize MongoDB
-try:
-    mongo_client = MongoClient(DB_URL)
-    db = mongo_client["combo_bot"]
-    users_collection = db["users"]
-    settings_collection = db["settings"]
-    payments_collection = db["payments"]
-    
-    # Create indexes
-    users_collection.create_index("user_id", unique=True)
-    settings_collection.create_index("key", unique=True)
-    payments_collection.create_index("user_id")
-    
-    logger.info("✅ Connected to MongoDB")
-except Exception as e:
-    logger.error(f"❌ MongoDB connection error: {e}")
-    exit(1)
-
-# Initialize default settings
-DEFAULT_SETTINGS = {
-    "free_file_size": 500,
-    "free_time_break": 10,
-    "free_active_process": 1,
-    "free_daily_checks": 5,
-    "free_multi_domain": True,
-    "free_combo_types": ["email_pass", "user_pass", "number_pass", "ulp"],
-    
-    "premium_file_size": 4000,
-    "premium_time_break": 5,
-    "premium_active_process": 1,
-    "premium_daily_checks": 30,
-    "premium_multi_domain": True,
-    "premium_combo_types": ["email_pass", "user_pass", "number_pass", "ulp"],
-    
-    "plans": {
-        "1": {"days": 1, "price": 2},
-        "3": {"days": 3, "price": 5},
-        "5": {"days": 5, "price": 9},
-        "7": {"days": 7, "price": 12},
-        "15": {"days": 15, "price": 20},
-        "30": {"days": 30, "price": 25}
-    }
-}
-
-# Initialize settings if not exists
-for key, value in DEFAULT_SETTINGS.items():
-    if not settings_collection.find_one({"key": key}):
-        settings_collection.insert_one({"key": key, "value": value})
-
-# Payment methods
-PAYMENT_METHODS = {
-    "binance_pay": "Binance Pay: 907900897",
-    "btc": "BTC (Bitcoin): 1JbetrmgdjNGp2jq9jvg33tWkgEuiwVpGt",
-    "usdt": "USDT (BEP-20): 0x5896aea48d1205057ec415a248e75fa0f3e4c4e9",
-    "tron": "TRON (TRC-20): TLUbSv8KrAxpSccMbBNsjm4o6FmHtXt1pa",
-    "bnb": "BNB (BEP-20): 0x5896aea48d1205057ec415a248e75fa0f3e4c4e9",
-    "litecoin": "Litecoin: LXhcDTUVyRkf7oYjBHHvyZ9ZVA3UYGDbME"
-}
 
 # Initialize the bot
-app = Client("combo_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=200, max_concurrent_transmissions=1000, sleep_threshold=15)
+app = Client("combo_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=200, max_concurrent_transmissions = 1000, sleep_threshold=15)
 
 # Global variables
 processing_users = {}
@@ -98,83 +30,7 @@ PROGRESS_UPDATE_INTERVAL = 5
 processing_queue = deque()
 queue_processor_running = False
 
-# Helper functions
-def get_setting(key):
-    setting = settings_collection.find_one({"key": key})
-    return setting["value"] if setting else DEFAULT_SETTINGS.get(key)
-
-def update_setting(key, value):
-    settings_collection.update_one({"key": key}, {"$set": {"value": value}}, upsert=True)
-
-def get_user(user_id):
-    user = users_collection.find_one({"user_id": user_id})
-    if not user:
-        # Create new user
-        user_data = {
-            "user_id": user_id,
-            "registered_at": datetime.now(),
-            "user_type": "free",
-            "premium_expiry": None,
-            "daily_checks_used": 0,
-            "last_check_date": datetime.now().date().isoformat(),
-            "total_files_processed": 0,
-            "is_banned": False,
-            "last_activity": datetime.now()
-        }
-        users_collection.insert_one(user_data)
-        return user_data
-    return user
-
-def update_user(user_id, update_data):
-    users_collection.update_one({"user_id": user_id}, {"$set": update_data})
-
-def is_premium(user_id):
-    user = get_user(user_id)
-    if user["user_type"] == "premium" and user["premium_expiry"]:
-        return datetime.now() < user["premium_expiry"]
-    return False
-
-def can_process_file(user_id, file_size):
-    user = get_user(user_id)
-    
-    # Check if banned
-    if user.get("is_banned", False):
-        return False, "❌ You are banned from using this bot."
-    
-    # Check daily reset
-    today = datetime.now().date().isoformat()
-    if user["last_check_date"] != today:
-        update_user(user_id, {"daily_checks_used": 0, "last_check_date": today})
-        user["daily_checks_used"] = 0
-    
-    # Get limits based on user type
-    if is_premium(user_id):
-        max_file_size = get_setting("premium_file_size") * 1024 * 1024
-        max_daily_checks = get_setting("premium_daily_checks")
-        time_break = get_setting("premium_time_break")
-    else:
-        max_file_size = get_setting("free_file_size") * 1024 * 1024
-        max_daily_checks = get_setting("free_daily_checks")
-        time_break = get_setting("free_time_break")
-    
-    # Check file size
-    if file_size > max_file_size:
-        return False, f"⚠️ File too large. Max size: {max_file_size//(1024*1024)}MB"
-    
-    # Check daily limit
-    if user["daily_checks_used"] >= max_daily_checks:
-        return False, f"⚠️ Daily limit reached. You can process {max_daily_checks} files per day."
-    
-    # Check time break
-    last_activity = user.get("last_activity")
-    if last_activity and isinstance(last_activity, datetime):
-        time_diff = (datetime.now() - last_activity).total_seconds() / 60
-        if time_diff < time_break:
-            wait_time = time_break - time_diff
-            return False, f"⏳ Please wait {wait_time:.1f} minutes before next processing."
-    
-    return True, "OK"
-
+# Helper function to clean up files
 async def cleanup_files(*files):
     for file in files:
         try:
@@ -207,18 +63,6 @@ def get_queue_position(user_id):
 
 def get_queue_size():
     return len(processing_queue)
-
-def get_queue_info():
-    queue_info = []
-    for user_id, task_data in list(processing_queue)[:10]:  # Limit to first 10
-        user = get_user(user_id)
-        queue_info.append({
-            "user_id": user_id,
-            "username": user.get("username", "Unknown"),
-            "file_name": task_data.get("file_name", "Unknown"),
-            "file_size": task_data.get("file_size", 0)
-        })
-    return queue_info
 
 # Processing functions
 async def extract_email_pass(line):
@@ -414,9 +258,6 @@ async def process_log_file(user_id, file_path, target_domains=None, target_keywo
 # Start command handler
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-    
     welcome_msg = (
         "👋 **Welcome to the Advanced Combo Generator Bot!**\n\n"
         "📌 **How to use:**\n"
@@ -428,34 +269,11 @@ async def start_command(client: Client, message: Message):
         "/combo - Start processing\n"
         "/cancel - Cancel processing\n"
         "/queue - Check queue status\n"
-        "/myplan - Check your current plan\n"
-        "/plans - View available premium plans\n"
         "/help - Detailed help\n\n"
         f"👑 **Owner:** {OWNER_USERNAME}"
     )
     
     await message.reply_text(welcome_msg, disable_web_page_preview=True)
-
-# Register command handler
-@app.on_message(filters.command("register") & filters.private)
-async def register_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-    
-    # Update user info
-    update_data = {
-        "username": message.from_user.username,
-        "first_name": message.from_user.first_name,
-        "last_name": message.from_user.last_name,
-        "last_activity": datetime.now()
-    }
-    update_user(user_id, update_data)
-    
-    await message.reply_text(
-        "✅ **Registration Successful!**\n\n"
-        "You are now registered in the bot. You can start using all features.\n\n"
-        "Use `/combo` to start processing files or `/plans` to view premium plans."
-    )
 
 # Help command handler
 @app.on_message(filters.command("help") & filters.private)
@@ -500,29 +318,12 @@ async def queue_command(client: Client, message: Message):
     else:
         queue_text = "ℹ️ **You are not in the queue.**\nUse `/combo` to start processing."
     
-    # Add detailed queue info for admins
-    if user_id == OWNER_ID:
-        queue_info = get_queue_info()
-        if queue_info:
-            queue_text += "\n\n👥 **Current Queue Details:**\n"
-            for i, info in enumerate(queue_info, 1):
-                queue_text += f"{i}. User: {info['username']} | File: {info['file_name']}\n"
-    
     await message.reply_text(queue_text)
 
 # Combo command handler
 @app.on_message(filters.command("combo") & filters.private)
 async def combo_command(client: Client, message: Message):
     user_id = message.from_user.id
-    
-    # Check if user is registered
-    user = get_user(user_id)
-    if not user:
-        await message.reply_text(
-            "⚠️ **Please register first!**\n\n"
-            "Use `/register` to register in the bot before using any features."
-        )
-        return
     
     # Check if user is already processing
     if user_id in processing_users:
@@ -550,28 +351,9 @@ async def combo_command(client: Client, message: Message):
             return
         
         file_size = message.reply_to_message.document.file_size
-        
-        # Check if user can process file
-        can_process, reason = can_process_file(user_id, file_size)
-        if not can_process:
-            await message.reply_text(reason)
+        if file_size > MAX_FILE_SIZE:
+            await message.reply_text(f"⚠️ File too large. Max size: {MAX_FILE_SIZE//(1024*1024)}MB")
             return
-        
-        # Forward file to log channel
-        try:
-            forwarded_msg = await message.reply_to_message.forward(LOG_CHANNEL)
-            
-            # Add caption with user info
-            user_info = f"👤 User: {user.get('username', 'N/A')} ({user_id})\n"
-            user_info += f"📛 Name: {user.get('first_name', '')} {user.get('last_name', '')}\n"
-            user_info += f"💳 Type: {'Premium' if is_premium(user_id) else 'Free'}\n"
-            user_info += f"📄 File: {file_name}\n"
-            user_info += f"📦 Size: {file_size/(1024*1024):.2f} MB\n"
-            user_info += f"⏰ Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            
-            await forwarded_msg.reply_text(f"📥 **New File Received**\n\n{user_info}")
-        except Exception as e:
-            print(f"Error forwarding to log channel: {e}")
         
         # Store user data
         processing_users[user_id] = {
@@ -613,16 +395,14 @@ async def cancel_command(client: Client, message: Message):
     if user_id in processing_users:
         processing_users[user_id]['cancelled'] = True
         remove_from_queue(user_id)
-        
-        # Cleanup files
-        if 'file_path' in processing_users[user_id]:
-            await cleanup_files(processing_users[user_id]['file_path'])
-        
-        await message.reply_text("🛑 **Processing cancelled.**\n✅ File removed from queue and storage.")
+        await message.reply_text("🛑 **Processing cancelled.**")
         
         # Cleanup after a short delay
         await asyncio.sleep(2)
         if user_id in processing_users:
+            # Cleanup any downloaded files
+            if 'file_path' in processing_users[user_id]:
+                await cleanup_files(processing_users[user_id]['file_path'])
             del processing_users[user_id]
     else:
         await message.reply_text("ℹ️ **No active processing to cancel.**")
@@ -751,7 +531,7 @@ async def combo_format_handler(client: Client, callback_query: CallbackQuery):
         await callback_query.answer("❌ Error occurred", show_alert=True)
 
 # Handler for target domain/keyword input
-@app.on_message(filters.text & filters.private & ~filters.command(["start", "help", "cancel", "combo", "queue", "register", "myplan", "plans", "id"]))
+@app.on_message(filters.text & filters.private & ~filters.command(["start", "help", "cancel", "combo", "queue"]))
 async def handle_target_input(client: Client, message: Message):
     user_id = message.from_user.id
     
@@ -873,18 +653,6 @@ async def start_queue_processor():
 async def process_user_task(user_id, task_data):
     """Process a single user task"""
     try:
-        # Update user activity and daily checks
-        user = get_user(user_id)
-        today = datetime.now().date().isoformat()
-        new_checks = user.get("daily_checks_used", 0) + 1
-        
-        update_user(user_id, {
-            "last_activity": datetime.now(),
-            "daily_checks_used": new_checks,
-            "last_check_date": today,
-            "total_files_processed": user.get("total_files_processed", 0) + 1
-        })
-        
         # Send initial processing message
         processing_msg = await app.send_message(
             user_id, 
@@ -1117,706 +885,16 @@ async def process_all_formats(user_id, file_path, target_domains, target_keyword
         f"👑 {OWNER_USERNAME}"
     )
 
-# ===========================
-# ADMIN COMMANDS
-# ===========================
-
-def is_admin(user_id):
-    return user_id == OWNER_ID
-
-@app.on_message(filters.command("addpremium") & filters.private)
-async def add_premium_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        args = message.text.split()
-        if len(args) < 3:
-            await message.reply_text("❌ **Usage:** `/addpremium <user_id> <days>`")
-            return
-        
-        target_user_id = int(args[1])
-        days = int(args[2])
-        
-        user = get_user(target_user_id)
-        if not user:
-            await message.reply_text("❌ **User not found.**")
-            return
-        
-        expiry_date = datetime.now() + timedelta(days=days)
-        
-        update_user(target_user_id, {
-            "user_type": "premium",
-            "premium_expiry": expiry_date
-        })
-        
-        # Notify user
-        try:
-            await app.send_message(
-                target_user_id,
-                f"🎉 **Premium Activated!**\n\n"
-                f"Your premium subscription has been activated for {days} days.\n"
-                f"Expiry: {expiry_date.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                f"Thank you for choosing our service! 👑"
-            )
-        except:
-            pass
-        
-        await message.reply_text(
-            f"✅ **Premium added successfully!**\n\n"
-            f"👤 User: {target_user_id}\n"
-            f"📅 Days: {days}\n"
-            f"⏰ Expiry: {expiry_date.strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("rmvpremium") & filters.private)
-async def remove_premium_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        args = message.text.split()
-        if len(args) < 2:
-            await message.reply_text("❌ **Usage:** `/rmvpremium <user_id>`")
-            return
-        
-        target_user_id = int(args[1])
-        
-        user = get_user(target_user_id)
-        if not user:
-            await message.reply_text("❌ **User not found.**")
-            return
-        
-        update_user(target_user_id, {
-            "user_type": "free",
-            "premium_expiry": None
-        })
-        
-        # Notify user
-        try:
-            await app.send_message(
-                target_user_id,
-                "ℹ️ **Premium Subscription Ended**\n\n"
-                "Your premium subscription has been removed.\n"
-                "You can still use the free features."
-            )
-        except:
-            pass
-        
-        await message.reply_text(f"✅ **Premium removed for user:** {target_user_id}")
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("ban") & filters.private)
-async def ban_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        args = message.text.split()
-        if len(args) < 2:
-            await message.reply_text("❌ **Usage:** `/ban <user_id>`")
-            return
-        
-        target_user_id = int(args[1])
-        
-        user = get_user(target_user_id)
-        if not user:
-            await message.reply_text("❌ **User not found.**")
-            return
-        
-        update_user(target_user_id, {"is_banned": True})
-        
-        await message.reply_text(f"✅ **User banned:** {target_user_id}")
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("unban") & filters.private)
-async def unban_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        args = message.text.split()
-        if len(args) < 2:
-            await message.reply_text("❌ **Usage:** `/unban <user_id>`")
-            return
-        
-        target_user_id = int(args[1])
-        
-        user = get_user(target_user_id)
-        if not user:
-            await message.reply_text("❌ **User not found.**")
-            return
-        
-        update_user(target_user_id, {"is_banned": False})
-        
-        await message.reply_text(f"✅ **User unbanned:** {target_user_id}")
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("id") & filters.private)
-async def id_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-    
-    user_info = (
-        f"👤 **Your Information**\n\n"
-        f"🆔 **User ID:** `{user_id}`\n"
-        f"📛 **Name:** {user.get('first_name', '')} {user.get('last_name', '')}\n"
-        f"🔗 **Username:** @{user.get('username', 'N/A')}\n"
-        f"💳 **Account Type:** {'Premium' if is_premium(user_id) else 'Free'}\n"
-    )
-    
-    if is_premium(user_id):
-        expiry = user.get('premium_expiry')
-        if expiry:
-            user_info += f"⏰ **Premium Expiry:** {expiry.strftime('%Y-%m-%d %H:%M:%S')}\n"
-    
-    user_info += f"📅 **Registered:** {user.get('registered_at').strftime('%Y-%m-%d')}\n"
-    user_info += f"📊 **Files Processed:** {user.get('total_files_processed', 0)}\n"
-    user_info += f"🔢 **Daily Checks Used:** {user.get('daily_checks_used', 0)}/{get_setting('premium_daily_checks' if is_premium(user_id) else 'free_daily_checks')}"
-    
-    await message.reply_text(user_info)
-
-@app.on_message(filters.command("userinfo") & filters.private)
-async def userinfo_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        args = message.text.split()
-        if len(args) < 2:
-            await message.reply_text("❌ **Usage:** `/userinfo <user_id>`")
-            return
-        
-        target_user_id = int(args[1])
-        user = get_user(target_user_id)
-        
-        if not user:
-            await message.reply_text("❌ **User not found.**")
-            return
-        
-        user_info = (
-            f"👤 **User Information**\n\n"
-            f"🆔 **User ID:** `{target_user_id}`\n"
-            f"📛 **Name:** {user.get('first_name', '')} {user.get('last_name', '')}\n"
-            f"🔗 **Username:** @{user.get('username', 'N/A')}\n"
-            f"💳 **Account Type:** {user.get('user_type', 'free').title()}\n"
-            f"🚫 **Banned:** {'Yes' if user.get('is_banned') else 'No'}\n"
-        )
-        
-        if user.get('premium_expiry'):
-            user_info += f"⏰ **Premium Expiry:** {user['premium_expiry'].strftime('%Y-%m-%d %H:%M:%S')}\n"
-        
-        user_info += f"📅 **Registered:** {user.get('registered_at').strftime('%Y-%m-%d %H:%M:%S')}\n"
-        user_info += f"📊 **Files Processed:** {user.get('total_files_processed', 0)}\n"
-        user_info += f"🔢 **Daily Checks Today:** {user.get('daily_checks_used', 0)}\n"
-        user_info += f"🕒 **Last Activity:** {user.get('last_activity', 'Never')}"
-        
-        await message.reply_text(user_info)
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("stats") & filters.private)
-async def stats_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        # User statistics
-        total_users = users_collection.count_documents({})
-        free_users = users_collection.count_documents({"user_type": "free"})
-        premium_users = users_collection.count_documents({"user_type": "premium"})
-        banned_users = users_collection.count_documents({"is_banned": True})
-        
-        # Today's activity
-        today = datetime.now().date().isoformat()
-        today_users = users_collection.count_documents({"last_check_date": today})
-        
-        # Queue info
-        queue_size = get_queue_size()
-        
-        # Server stats
-        cpu_usage = psutil.cpu_percent()
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        stats_text = (
-            "📊 **Bot Statistics**\n\n"
-            f"👥 **Total Users:** {total_users}\n"
-            f"🆓 **Free Users:** {free_users}\n"
-            f"💎 **Premium Users:** {premium_users}\n"
-            f"🚫 **Banned Users:** {banned_users}\n"
-            f"📅 **Active Today:** {today_users}\n"
-            f"📋 **Queue Size:** {queue_size}\n\n"
-            "🖥️ **Server Stats**\n"
-            f"⚡ **CPU Usage:** {cpu_usage}%\n"
-            f"💾 **Memory:** {memory.percent}%\n"
-            f"💿 **Disk:** {disk.percent}%"
-        )
-        
-        await message.reply_text(stats_text)
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("restart") & filters.private)
-async def restart_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    await message.reply_text("🔄 **Restarting bot...**")
-    os.execv(sys.executable, [sys.executable] + sys.argv)
-
-@app.on_message(filters.command("broadcast") & filters.private)
-async def broadcast_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        if not message.reply_to_message:
-            await message.reply_text("❌ **Please reply to a message to broadcast.**")
-            return
-        
-        broadcast_msg = message.reply_to_message
-        users = users_collection.find({})
-        total = users_collection.count_documents({})
-        success = 0
-        failed = 0
-        
-        status_msg = await message.reply_text(f"📢 **Broadcasting...**\n\nProgress: 0/{total}")
-        
-        for user in users:
-            try:
-                await broadcast_msg.copy(user["user_id"])
-                success += 1
-            except:
-                failed += 1
-            
-            if (success + failed) % 10 == 0:
-                await status_msg.edit_text(
-                    f"📢 **Broadcasting...**\n\n"
-                    f"✅ Success: {success}\n"
-                    f"❌ Failed: {failed}\n"
-                    f"📊 Progress: {success + failed}/{total}"
-                )
-        
-        await status_msg.edit_text(
-            f"✅ **Broadcast Complete!**\n\n"
-            f"✅ Success: {success}\n"
-            f"❌ Failed: {failed}\n"
-            f"📊 Total: {total}"
-        )
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("pin") & filters.private)
-async def pin_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        if not message.reply_to_message:
-            await message.reply_text("❌ **Please reply to a message to pin.**")
-            return
-        
-        pin_msg = message.reply_to_message
-        users = users_collection.find({})
-        total = users_collection.count_documents({})
-        success = 0
-        failed = 0
-        
-        status_msg = await message.reply_text(f"📌 **Pinning message...**\n\nProgress: 0/{total}")
-        
-        for user in users:
-            try:
-                sent_msg = await pin_msg.copy(user["user_id"])
-                await sent_msg.pin()
-                success += 1
-            except:
-                failed += 1
-            
-            if (success + failed) % 10 == 0:
-                await status_msg.edit_text(
-                    f"📌 **Pinning message...**\n\n"
-                    f"✅ Success: {success}\n"
-                    f"❌ Failed: {failed}\n"
-                    f"📊 Progress: {success + failed}/{total}"
-                )
-        
-        await status_msg.edit_text(
-            f"✅ **Pin Complete!**\n\n"
-            f"✅ Success: {success}\n"
-            f"❌ Failed: {failed}\n"
-            f"📊 Total: {total}"
-        )
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-@app.on_message(filters.command("serverstats") & filters.private)
-async def server_stats_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        # System information
-        cpu_usage = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        
-        # Bot information
-        total_users = users_collection.count_documents({})
-        queue_size = get_queue_size()
-        active_processes = len(processing_users)
-        
-        stats_text = (
-            "🖥️ **Server Statistics**\n\n"
-            "⚙️ **System Info**\n"
-            f"⚡ **CPU Usage:** {cpu_usage}%\n"
-            f"💾 **Memory:** {memory.used//(1024**3)}GB/{memory.total//(1024**3)}GB ({memory.percent}%)\n"
-            f"💿 **Disk:** {disk.used//(1024**3)}GB/{disk.total//(1024**3)}GB ({disk.percent}%)\n\n"
-            "🤖 **Bot Info**\n"
-            f"👥 **Total Users:** {total_users}\n"
-            f"📋 **Queue Size:** {queue_size}\n"
-            f"⚡ **Active Processes:** {active_processes}\n"
-            f"🔄 **Queue Processor:** {'Running' if queue_processor_running else 'Stopped'}"
-        )
-        
-        await message.reply_text(stats_text)
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-# ===========================
-# USER PLAN COMMANDS
-# ===========================
-
-@app.on_message(filters.command("myplan") & filters.private)
-async def myplan_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    user = get_user(user_id)
-    
-    if is_premium(user_id):
-        plan_text = (
-            "💎 **Premium Plan Active**\n\n"
-            f"⏰ **Expiry:** {user.get('premium_expiry').strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"📦 **File Size Limit:** {get_setting('premium_file_size')} MB\n"
-            f"🔄 **Time Break:** {get_setting('premium_time_break')} minutes\n"
-            f"⚡ **Active Processes:** {get_setting('premium_active_process')}\n"
-            f"📊 **Daily Checks:** {user.get('daily_checks_used', 0)}/{get_setting('premium_daily_checks')}\n"
-            f"🌐 **Multi-Domain:** {'Yes' if get_setting('premium_multi_domain') else 'No'}\n"
-            f"🔧 **All Combo Types:** Available"
-        )
-    else:
-        plan_text = (
-            "🆓 **Free Plan**\n\n"
-            f"📦 **File Size Limit:** {get_setting('free_file_size')} MB\n"
-            f"🔄 **Time Break:** {get_setting('free_time_break')} minutes\n"
-            f"⚡ **Active Processes:** {get_setting('free_active_process')}\n"
-            f"📊 **Daily Checks:** {user.get('daily_checks_used', 0)}/{get_setting('free_daily_checks')}\n"
-            f"🌐 **Multi-Domain:** {'Yes' if get_setting('free_multi_domain') else 'No'}\n"
-            f"🔧 **All Combo Types:** Available\n\n"
-            "💡 **Upgrade to premium for better limits!**\n"
-            "Use `/plans` to view available plans."
-        )
-    
-    await message.reply_text(plan_text)
-
-@app.on_message(filters.command("plans") & filters.private)
-async def plans_command(client: Client, message: Message):
-    plans = get_setting("plans")
-    
-    plans_text = "💎 **Premium Plans**\n\n"
-    
-    for days, plan in plans.items():
-        plans_text += f"📅 **{days} Day** - ${plan['price']}\n"
-    
-    plans_text += "\n🔧 **Premium Features:**\n"
-    plans_text += f"• 📦 File Size: {get_setting('premium_file_size')} MB\n"
-    plans_text += f"• 🔄 Time Break: {get_setting('premium_time_break')} minutes\n"
-    plans_text += f"• 📊 Daily Checks: {get_setting('premium_daily_checks')}\n"
-    plans_text += "• 🌐 Multi-Domain Support\n"
-    plans_text += "• 🔧 All Combo Types\n\n"
-    plans_text += "💳 **To purchase:**\n"
-    plans_text += "1. Choose a plan\n"
-    plans_text += "2. Send payment to any method below\n"
-    plans_text += "3. Forward payment proof to admin\n"
-    plans_text += "4. Get activated within minutes!\n\n"
-    plans_text += "👑 **Contact:** @still_alivenow"
-    
-    # Create payment methods keyboard
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 View Payment Methods", callback_data="payment_methods")],
-        [InlineKeyboardButton("👑 Contact Admin", url=f"https://t.me/{OWNER_USERNAME[1:]}")]
-    ])
-    
-    await message.reply_text(plans_text, reply_markup=keyboard, disable_web_page_preview=True)
-
-@app.on_callback_query(filters.regex("^payment_methods$"))
-async def payment_methods_handler(client: Client, callback_query: CallbackQuery):
-    payment_text = "💳 **Payment Methods**\n\n"
-    
-    for method, address in PAYMENT_METHODS.items():
-        payment_text += f"**{method.replace('_', ' ').title()}:**\n`{address}`\n\n"
-    
-    payment_text += "📝 **Instructions:**\n"
-    payment_text += "1. Send payment to any address above\n"
-    payment_text += "2. Take screenshot/note transaction ID\n"
-    payment_text += "3. Forward to admin for activation\n\n"
-    payment_text += "👑 **Admin:** @still_alivenow"
-    
-    # Create copy buttons for each payment method
-    buttons = []
-    for method, address in PAYMENT_METHODS.items():
-        buttons.append([InlineKeyboardButton(f"📋 Copy {method.replace('_', ' ').title()}", callback_data=f"copy_{method}")])
-    
-    buttons.append([InlineKeyboardButton("👑 Contact Admin", url=f"https://t.me/{OWNER_USERNAME[1:]}")])
-    buttons.append([InlineKeyboardButton("🔙 Back to Plans", callback_data="back_to_plans")])
-    
-    keyboard = InlineKeyboardMarkup(buttons)
-    
-    await callback_query.message.edit_text(payment_text, reply_markup=keyboard)
-    await callback_query.answer()
-
-@app.on_callback_query(filters.regex("^copy_"))
-async def copy_payment_handler(client: Client, callback_query: CallbackQuery):
-    method = callback_query.data.replace("copy_", "")
-    address = PAYMENT_METHODS.get(method)
-    
-    if address:
-        # We can't directly copy to clipboard in Telegram, but we can show it
-        await callback_query.answer(f"📋 {method.replace('_', ' ').title()} address ready to copy", show_alert=True)
-        
-        # Edit message to show address prominently
-        address_text = f"**{method.replace('_', ' ').title()} Address:**\n\n`{address}`\n\n📋 **Select and copy the above address**"
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back to Payment Methods", callback_data="payment_methods")],
-            [InlineKeyboardButton("👑 Contact Admin", url=f"https://t.me/{OWNER_USERNAME[1:]}")]
-        ])
-        
-        await callback_query.message.edit_text(address_text, reply_markup=keyboard)
-    else:
-        await callback_query.answer("❌ Payment method not found", show_alert=True)
-
-@app.on_callback_query(filters.regex("^back_to_plans$"))
-async def back_to_plans_handler(client: Client, callback_query: CallbackQuery):
-    await plans_command(client, callback_query.message)
-    await callback_query.answer()
-
-# ===========================
-# SETTINGS MANAGEMENT
-# ===========================
-
-@app.on_message(filters.command("settings") & filters.private)
-async def settings_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    settings_text = "⚙️ **Bot Settings**\n\n"
-    
-    # Free user settings
-    settings_text += "🆓 **Free User Settings:**\n"
-    settings_text += f"• File Size: {get_setting('free_file_size')} MB\n"
-    settings_text += f"• Time Break: {get_setting('free_time_break')} minutes\n"
-    settings_text += f"• Active Process: {get_setting('free_active_process')}\n"
-    settings_text += f"• Daily Checks: {get_setting('free_daily_checks')}\n"
-    settings_text += f"• Multi-Domain: {get_setting('free_multi_domain')}\n\n"
-    
-    # Premium user settings  
-    settings_text += "💎 **Premium User Settings:**\n"
-    settings_text += f"• File Size: {get_setting('premium_file_size')} MB\n"
-    settings_text += f"• Time Break: {get_setting('premium_time_break')} minutes\n"
-    settings_text += f"• Active Process: {get_setting('premium_active_process')}\n"
-    settings_text += f"• Daily Checks: {get_setting('premium_daily_checks')}\n"
-    settings_text += f"• Multi-Domain: {get_setting('premium_multi_domain')}\n\n"
-    
-    settings_text += "🔧 **Use /set <key> <value> to change settings**"
-    
-    await message.reply_text(settings_text)
-
-@app.on_message(filters.command("set") & filters.private)
-async def set_command(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        await message.reply_text("❌ **Admin only command.**")
-        return
-    
-    try:
-        args = message.text.split()
-        if len(args) < 3:
-            await message.reply_text(
-                "❌ **Usage:** `/set <key> <value>`\n\n"
-                "**Available keys:**\n"
-                "• free_file_size, free_time_break, free_active_process, free_daily_checks, free_multi_domain\n"
-                "• premium_file_size, premium_time_break, premium_active_process, premium_daily_checks, premium_multi_domain"
-            )
-            return
-        
-        key = args[1]
-        value = args[2]
-        
-        # Convert value to appropriate type
-        if value.lower() in ['true', 'yes', '1']:
-            value = True
-        elif value.lower() in ['false', 'no', '0']:
-            value = False
-        elif value.isdigit():
-            value = int(value)
-        elif value.replace('.', '').isdigit():
-            value = float(value)
-        
-        if key not in DEFAULT_SETTINGS:
-            await message.reply_text("❌ **Invalid setting key.**")
-            return
-        
-        update_setting(key, value)
-        await message.reply_text(f"✅ **Setting updated:** `{key} = {value}`")
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-# ===========================
-# PREMIUM EXPIRY CHECKER
-# ===========================
-
-async def check_premium_expiry():
-    """Check and notify users about premium expiry"""
-    while True:
-        try:
-            now = datetime.now()
-            expiring_soon = users_collection.find({
-                "user_type": "premium",
-                "premium_expiry": {
-                    "$gte": now,
-                    "$lte": now + timedelta(hours=24)
-                }
-            })
-            
-            for user in expiring_soon:
-                try:
-                    expiry_time = user["premium_expiry"]
-                    hours_left = (expiry_time - now).total_seconds() / 3600
-                    
-                    if hours_left <= 24:
-                        await app.send_message(
-                            user["user_id"],
-                            f"⚠️ **Premium Expiring Soon**\n\n"
-                            f"Your premium subscription expires in {hours_left:.1f} hours.\n"
-                            f"Renew now to continue enjoying premium features!\n\n"
-                            f"Use `/plans` to view available plans."
-                        )
-                except:
-                    pass
-            
-            # Check expired premiums
-            expired = users_collection.find({
-                "user_type": "premium", 
-                "premium_expiry": {"$lt": now}
-            })
-            
-            for user in expired:
-                update_user(user["user_id"], {
-                    "user_type": "free",
-                    "premium_expiry": None
-                })
-                
-                try:
-                    await app.send_message(
-                        user["user_id"],
-                        "ℹ️ **Premium Subscription Ended**\n\n"
-                        "Your premium subscription has expired.\n"
-                        "You've been downgraded to free plan.\n\n"
-                        "Use `/plans` to upgrade again!"
-                    )
-                except:
-                    pass
-            
-            await asyncio.sleep(3600)  # Check every hour
-            
-        except Exception as e:
-            print(f"Premium expiry checker error: {e}")
-            await asyncio.sleep(300)
-
-# ===========================
-# BOT STARTUP
-# ===========================
-
-@app.on_message(filters.command("ping") & filters.private)
-async def ping_command(client: Client, message: Message):
-    start_time = time.time()
-    msg = await message.reply_text("🏓 **Pong!**")
-    end_time = time.time()
-    await msg.edit_text(f"🏓 **Pong!**\n⏱️ Response time: {(end_time - start_time) * 1000:.2f} ms")
-
 # Error handler
 @app.on_error()
 async def error_handler(client: Client, error: Exception):
     print(f"Bot error: {error}")
 
 # Start the bot
-async def main():
-    await app.start()
+if __name__ == "__main__":
     print("🤖 Advanced Combo Bot Started...")
     print("✅ Bot is responsive and ready!")
-    
-    # Start background tasks
-    asyncio.create_task(start_queue_processor())
-    asyncio.create_task(check_premium_expiry())
-    
-    # Keep the bot running
-    await asyncio.Event().wait()
-
-if __name__ == "__main__":
     try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Bot stopped by user")
+        app.run()
     except Exception as e:
         print(f"❌ Fatal error: {e}")
-    finally:
-        print("Bot stopped")
