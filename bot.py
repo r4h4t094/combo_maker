@@ -19,7 +19,7 @@ API_HASH = "6df11147cbec7d62a323f0f498c8c03a"
 BOT_TOKEN = "7989255010:AAGI73-gpORxqqnsNrRRCLWNCyyACA0ia-w"
 OWNER_ID = 7125341830
 OWNER_USERNAME = "@still_alivenow"
-LOG_CHANNEL = -1003277595247  # Replace with your log channel ID
+LOG_CHANNEL = -1003735141807  # Replace with your log channel ID
 
 # Initialize the bot
 app = Client("combo_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, workers=200, max_concurrent_transmissions = 1000, sleep_threshold=15)
